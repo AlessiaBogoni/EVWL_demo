@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Activity</title>
+  <style>
+    body { font-family: sans-serif; margin: 0; padding: 20px; text-align: center; background: #f9f9f9; }
+    video { max-width: 100%; width: 720px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+  </style>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+  <video id="tracker-video" controls>
+    <source src="https://share.synthesia.io/244ac70c-e6be-493e-9dbe-f95bd1749313" type="video/mp4">
+    Your browser does not support the video tag.
+  </video>
+
+  <script>
+    // 1. Paste your Firebase project configuration here
+   
+// Your web app's Firebase configuration
+    const firebaseConfig = {
+      apiKey: "AIzaSyBgL5vJtDb3mYnua14lBF2gSc5CBJndOkI",
+      authDomain: "evwl26.firebaseapp.com",
+      projectId: "evwl26",
+      storageBucket: "evwl26.firebasestorage.app",
+      messagingSenderId: "70004372417",
+      appId: "1:70004372417:web:fbaaf6429ecdc27052f540"
+    };
+
+    // Initialize Firebase
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    // 2. Extract URL parameter passed from Moodle iframe (?student_id=12345)
+    const urlParams = new URLSearchParams(window.location.search);
+    const studentId = urlParams.get('student_id') || 'unknown_student';
+
+    const video = document.getElementById('tracker-video');
+
+    // Helper function to stream event telemetry to Cloud Firestore
+    function sendTelemetry(eventType, extraData = {}) {
+      const payload = {
+        student_id: studentId,
+        event: eventType,
+        video_time_seconds: Math.round(video.currentTime),
+        tab_visible: !document.hidden,
+        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        ...extraData
+      };
+
+      db.collection("telemetry_logs").add(payload)
+        .catch(err => console.error("Logging error:", err));
+    }
+
+    // 3. Telemetry Event Listeners
+    video.addEventListener('play', () => sendTelemetry('play'));
+    video.addEventListener('pause', () => sendTelemetry('pause'));
+    video.addEventListener('seeked', () => sendTelemetry('seeked'));
+    video.addEventListener('ended', () => sendTelemetry('ended'));
+
+    // Track when a student switches browser tabs or minimizes window
+    document.addEventListener('visibilitychange', () => {
+      sendTelemetry(document.hidden ? 'tab_hidden' : 'tab_focused');
+    });
+
+    // Log initial page load
+    window.addEventListener('load', () => sendTelemetry('session_start'));
+  </script>
+</body>
+</html>
