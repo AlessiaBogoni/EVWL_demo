@@ -20,7 +20,7 @@
 
     .player-container {
       width: 100%;
-      max-width: 720px;
+      max-width: 760px;
       background: #ffffff;
       padding: 20px;
       border-radius: 10px;
@@ -28,7 +28,25 @@
       box-sizing: border-box;
     }
 
-    video,
+    /* Responsive container so Synthesia video embed never collapses to 0px */
+    .iframe-wrapper {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 16 / 9;
+      background: #000000;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    .iframe-wrapper iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
     audio {
       width: 100%;
       border-radius: 6px;
@@ -41,35 +59,21 @@
       margin-top: 8px;
     }
   </style>
+
+  <!-- Firebase JS Compat SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 </head>
 
 <body>
 
-  <!--  <video id="tracker-video" controls>
-    <source src="https://share.synthesia.io/244ac70c-e6be-493e-9dbe-f95bd1749313" type="video/mp4">
-    Your browser does not support the video tag.
-  </video> -->
-
-  <!-- <div id="tracker-video" controls style="position: relative; overflow: hidden; aspect-ratio: 1920/1080"><iframe
-      src="https://share.synthesia.io/embeds/videos/244ac70c-e6be-493e-9dbe-f95bd1749313" loading="lazy"
-      title="Synthesia video player - Introduction to Economics" allowfullscreen
-      allow="encrypted-media; fullscreen; microphone; screen-wake-lock;"
-      style="position: absolute; width: 100%; height: 100%; top: 0; left: 0; border: none; padding: 0; margin: 0; overflow:hidden;"></iframe>
-  </div> -->
-
   <div class="player-container">
-    <!-- Players are hidden by default; JS will display the correct one -->
-    <video id="video-player" controls style="display: none;"></video>
-    <audio id="audio-player" controls style="display: none;"></audio>
+    <div id="media-content"></div>
     <div id="status" class="status-msg">Loading media...</div>
   </div>
 
   <script>
-    // 1. Paste your Firebase project configuration here
-
-    // Your web app's Firebase configuration
+    // 1. Firebase Configuration
     const firebaseConfig = {
       apiKey: "AIzaSyBgL5vJtDb3mYnua14lBF2gSc5CBJndOkI",
       authDomain: "evwl26.firebaseapp.com",
@@ -83,61 +87,86 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
+    // 2. Activity Mapping Dictionary
     const cmidMapping = {
-      "3885816": { type: "video", url: "https://share.synthesia.io/embeds/videos/244ac70c-e6be-493e-9dbe-f95bd1749313", treatment: "Greg_Video_01" },
-      "1002": { type: "audio", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", treatment: "Greg_Audio_01" },
-      // Duplicate entries as you publish activities across your 18 sections
+      "3885816": { 
+        type: "video", 
+        url: "https://share.synthesia.io/embeds/videos/244ac70c-e6be-493e-9dbe-f95bd1749313", 
+        treatment: "Greg_Video_01" 
+      },
+      "1002": { 
+        type: "audio", 
+        url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", 
+        treatment: "Greg_Audio_01" 
+      }
     };
 
-    // 2. Extract URL parameter passed from Moodle iframe (?student_id=12345)
+    // 3. Extract URL parameters passed from Moodle
     const urlParams = new URLSearchParams(window.location.search);
-    const studentId = urlParams.get('id') || 'unknown_student';
-    const cmid = urlParams.get('group') || 'unknown_activity';
+    const studentId = urlParams.get('id') || urlParams.get('student_id') || 'unknown_student';
+    const cmid      = urlParams.get('code') || urlParams.get('group') || urlParams.get('cmid') || 'unknown_activity';
     const studentMn = urlParams.get('mn') || 'unknown_matriculation';
-    const time = urlParams.get('time') || 'unknown_time';
+    const time      = urlParams.get('time') || 'unknown_time';
 
     const mediaConfig = cmidMapping[cmid] || {
       type: "video",
-      url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+      url: "https://share.synthesia.io/embeds/videos/244ac70c-e6be-493e-9dbe-f95bd1749313",
       treatment: "Default_Control"
     };
 
-    // 4. Activate the appropriate HTML5 player
-    const videoPlayer = document.getElementById('video-player');
-    const audioPlayer = document.getElementById('audio-player');
+    // 4. Render the proper media element (iframe vs audio)
+    const mediaContainer = document.getElementById('media-content');
     const statusEl = document.getElementById('status');
-
-    let activePlayer;
+    let activeAudioPlayer = null;
 
     if (mediaConfig.type === 'video') {
-      activePlayer = videoPlayer;
-      videoPlayer.src = mediaConfig.url;
-      videoPlayer.style.display = 'block';
+      // Synthesia videos load dynamically inside a responsive iframe
+      mediaContainer.innerHTML = `
+        <div class="iframe-wrapper">
+          <iframe 
+            src="${mediaConfig.url}" 
+            title="Synthesia Video Player"
+            loading="lazy"
+            allow="encrypted-media; fullscreen; microphone; screen-wake-lock;" 
+            allowfullscreen>
+          </iframe>
+        </div>`;
     } else {
-      activePlayer = audioPlayer;
-      audioPlayer.src = mediaConfig.url;
-      audioPlayer.style.display = 'block';
+      // Podcasts load inside a native HTML5 audio element
+      mediaContainer.innerHTML = `<audio id="audio-player" controls src="${mediaConfig.url}"></audio>`;
+      activeAudioPlayer = document.getElementById('audio-player');
+
+      // Attach audio event listeners
+      activeAudioPlayer.addEventListener('play', () => logEvent('play'));
+      activeAudioPlayer.addEventListener('pause', () => logEvent('pause'));
+      activeAudioPlayer.addEventListener('seeked', () => logEvent('seeked'));
+      activeAudioPlayer.addEventListener('ended', () => logEvent('ended'));
     }
+    
     statusEl.style.display = 'none';
 
-    // 5. Initialize a single Firestore session document
+    // 5. Initialize Firestore session document
     const sessionRef = db.collection("telemetry_logs").doc();
 
     sessionRef.set({
       student_id: studentId,
+      matriculation_number: studentMn,
       moodle_cmid: cmid,
       treatment_group: mediaConfig.treatment,
       media_type: mediaConfig.type,
       media_url: mediaConfig.url,
+      client_timestamp: time,
       session_start: firebase.firestore.FieldValue.serverTimestamp(),
       events: []
     }).catch(err => console.error("Firestore initialization error:", err));
 
-    // 6. Log interaction events to the session document
+    // 6. Log interaction and visibility telemetry
     function logEvent(eventType, extraData = {}) {
+      const mediaTimestamp = activeAudioPlayer ? Math.round(activeAudioPlayer.currentTime) : null;
+
       const payload = {
         event: eventType,
-        media_timestamp_sec: Math.round(activePlayer.currentTime),
+        media_timestamp_sec: mediaTimestamp,
         tab_visible: !document.hidden,
         timestamp: new Date().toISOString(),
         ...extraData
@@ -148,13 +177,7 @@
       }).catch(err => console.error("Logging error:", err));
     }
 
-    // Media Event Listeners
-    activePlayer.addEventListener('play', () => logEvent('play'));
-    activePlayer.addEventListener('pause', () => logEvent('pause'));
-    activePlayer.addEventListener('seeked', () => logEvent('seeked'));
-    activePlayer.addEventListener('ended', () => logEvent('ended'));
-
-    // Browser tab switching / minimizing detection
+    // Monitor browser tab switching / minimizing
     document.addEventListener('visibilitychange', () => {
       logEvent(document.hidden ? 'tab_hidden' : 'tab_focused');
     });
