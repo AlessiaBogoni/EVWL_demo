@@ -4,21 +4,41 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Video Activity</title>
+  <title>Course Material</title>
   <style>
     body {
-      font-family: sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       margin: 0;
-      padding: 20px;
-      text-align: center;
-      background: #f9f9f9;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background-color: #f8f9fa;
+      color: #333;
     }
 
-    video {
-      max-width: 100%;
-      width: 720px;
-      border-radius: 8px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    .player-container {
+      width: 100%;
+      max-width: 720px;
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+      box-sizing: border-box;
+    }
+
+    video,
+    audio {
+      width: 100%;
+      border-radius: 6px;
+      outline: none;
+    }
+
+    .status-msg {
+      font-size: 14px;
+      color: #666;
+      margin-top: 8px;
     }
   </style>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
@@ -27,16 +47,23 @@
 
 <body>
 
- <!--  <video id="tracker-video" controls>
+  <!--  <video id="tracker-video" controls>
     <source src="https://share.synthesia.io/244ac70c-e6be-493e-9dbe-f95bd1749313" type="video/mp4">
     Your browser does not support the video tag.
   </video> -->
 
-  <div id="tracker-video" controls style="position: relative; overflow: hidden; aspect-ratio: 1920/1080"><iframe
+  <!-- <div id="tracker-video" controls style="position: relative; overflow: hidden; aspect-ratio: 1920/1080"><iframe
       src="https://share.synthesia.io/embeds/videos/244ac70c-e6be-493e-9dbe-f95bd1749313" loading="lazy"
       title="Synthesia video player - Introduction to Economics" allowfullscreen
       allow="encrypted-media; fullscreen; microphone; screen-wake-lock;"
       style="position: absolute; width: 100%; height: 100%; top: 0; left: 0; border: none; padding: 0; margin: 0; overflow:hidden;"></iframe>
+  </div> -->
+
+  <div class="player-container">
+    <!-- Players are hidden by default; JS will display the correct one -->
+    <video id="video-player" controls style="display: none;"></video>
+    <audio id="audio-player" controls style="display: none;"></audio>
+    <div id="status" class="status-msg">Loading media...</div>
   </div>
 
   <script>
@@ -56,40 +83,81 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
+    const cmidMapping = {
+      "1001": { type: "video", url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4", treatment: "Greg_Video_01" },
+      "1002": { type: "audio", url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", treatment: "Greg_Audio_01" },
+      // Duplicate entries as you publish activities across your 18 sections
+    };
+
     // 2. Extract URL parameter passed from Moodle iframe (?student_id=12345)
     const urlParams = new URLSearchParams(window.location.search);
-    const studentId = urlParams.get('student_id') || 'unknown_student';
+    const studentId = urlParams.get('id') || 'unknown_student';
+    const cmid = urlParams.get('group') || 'unknown_activity';
+    const studentMn = urlParams.get('mn') || 'unknown_matriculation';
+    const time = urlParams.get('time') || 'unknown_time';
 
-    const video = document.getElementById('tracker-video');
+    const mediaConfig = cmidMapping[cmid] || {
+      type: "video",
+      url: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+      treatment: "Default_Control"
+    };
 
-    // Helper function to stream event telemetry to Cloud Firestore
-    function sendTelemetry(eventType, extraData = {}) {
+    // 4. Activate the appropriate HTML5 player
+    const videoPlayer = document.getElementById('video-player');
+    const audioPlayer = document.getElementById('audio-player');
+    const statusEl = document.getElementById('status');
+
+    let activePlayer;
+
+    if (mediaConfig.type === 'video') {
+      activePlayer = videoPlayer;
+      videoPlayer.src = mediaConfig.url;
+      videoPlayer.style.display = 'block';
+    } else {
+      activePlayer = audioPlayer;
+      audioPlayer.src = mediaConfig.url;
+      audioPlayer.style.display = 'block';
+    }
+    statusEl.style.display = 'none';
+
+    // 5. Initialize a single Firestore session document
+    const sessionRef = db.collection("telemetry_logs").doc();
+
+    sessionRef.set({
+      student_id: studentId,
+      moodle_cmid: cmid,
+      treatment_group: mediaConfig.treatment,
+      media_type: mediaConfig.type,
+      media_url: mediaConfig.url,
+      session_start: firebase.firestore.FieldValue.serverTimestamp(),
+      events: []
+    }).catch(err => console.error("Firestore initialization error:", err));
+
+    // 6. Log interaction events to the session document
+    function logEvent(eventType, extraData = {}) {
       const payload = {
-        student_id: studentId,
         event: eventType,
-        video_time_seconds: Math.round(video.currentTime),
+        media_timestamp_sec: Math.round(activePlayer.currentTime),
         tab_visible: !document.hidden,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp(),
+        timestamp: new Date().toISOString(),
         ...extraData
       };
 
-      db.collection("telemetry_logs").add(payload)
-        .catch(err => console.error("Logging error:", err));
+      sessionRef.update({
+        events: firebase.firestore.FieldValue.arrayUnion(payload)
+      }).catch(err => console.error("Logging error:", err));
     }
 
-    // 3. Telemetry Event Listeners
-    video.addEventListener('play', () => sendTelemetry('play'));
-    video.addEventListener('pause', () => sendTelemetry('pause'));
-    video.addEventListener('seeked', () => sendTelemetry('seeked'));
-    video.addEventListener('ended', () => sendTelemetry('ended'));
+    // Media Event Listeners
+    activePlayer.addEventListener('play', () => logEvent('play'));
+    activePlayer.addEventListener('pause', () => logEvent('pause'));
+    activePlayer.addEventListener('seeked', () => logEvent('seeked'));
+    activePlayer.addEventListener('ended', () => logEvent('ended'));
 
-    // Track when a student switches browser tabs or minimizes window
+    // Browser tab switching / minimizing detection
     document.addEventListener('visibilitychange', () => {
-      sendTelemetry(document.hidden ? 'tab_hidden' : 'tab_focused');
+      logEvent(document.hidden ? 'tab_hidden' : 'tab_focused');
     });
-
-    // Log initial page load
-    window.addEventListener('load', () => sendTelemetry('session_start'));
   </script>
 </body>
 
