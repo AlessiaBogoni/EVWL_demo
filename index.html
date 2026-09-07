@@ -28,29 +28,13 @@
       box-sizing: border-box;
     }
 
-    /* Responsive container so Synthesia video embed never collapses to 0px */
-    .iframe-wrapper {
-      position: relative;
-      width: 100%;
-      aspect-ratio: 16 / 9;
-      background: #000000;
-      border-radius: 6px;
-      overflow: hidden;
-    }
-
-    .iframe-wrapper iframe {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      border: none;
-    }
-
+    /* Styles for both local video and audio elements */
+    video,
     audio {
       width: 100%;
       border-radius: 6px;
       outline: none;
+      background-color: #000000;
     }
 
     .status-msg {
@@ -87,16 +71,16 @@
     firebase.initializeApp(firebaseConfig);
     const db = firebase.firestore();
 
-    // 2. Activity Mapping Dictionary
+    // 2. Activity Mapping Dictionary (Relative local paths inside repository)
     const cmidMapping = {
       "3885816": { 
         type: "video", 
-        url: "https://share.synthesia.io/embeds/videos/244ac70c-e6be-493e-9dbe-f95bd1749313", 
+        url: "videos/lecture1.mp4", 
         treatment: "Greg_Video_01" 
       },
       "1002": { 
         type: "audio", 
-        url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3", 
+        url: "audio/podcast1.mp3", 
         treatment: "Greg_Audio_01" 
       }
     };
@@ -110,39 +94,29 @@
 
     const mediaConfig = cmidMapping[cmid] || {
       type: "video",
-      url: "https://share.synthesia.io/embeds/videos/244ac70c-e6be-493e-9dbe-f95bd1749313",
+      url: "videos/lecture1.mp4",
       treatment: "Default_Control"
     };
 
-    // 4. Render the proper media element (iframe vs audio)
+    // 4. Render native HTML5 player (video vs audio)
     const mediaContainer = document.getElementById('media-content');
     const statusEl = document.getElementById('status');
-    let activeAudioPlayer = null;
+    let activePlayer = null;
 
     if (mediaConfig.type === 'video') {
-      // Synthesia videos load dynamically inside a responsive iframe
-      mediaContainer.innerHTML = `
-        <div class="iframe-wrapper">
-          <iframe 
-            src="${mediaConfig.url}" 
-            title="Synthesia Video Player"
-            loading="lazy"
-            allow="encrypted-media; fullscreen; microphone; screen-wake-lock;" 
-            allowfullscreen>
-          </iframe>
-        </div>`;
+      mediaContainer.innerHTML = `<video id="active-media" controls src="${mediaConfig.url}"></video>`;
     } else {
-      // Podcasts load inside a native HTML5 audio element
-      mediaContainer.innerHTML = `<audio id="audio-player" controls src="${mediaConfig.url}"></audio>`;
-      activeAudioPlayer = document.getElementById('audio-player');
-
-      // Attach audio event listeners
-      activeAudioPlayer.addEventListener('play', () => logEvent('play'));
-      activeAudioPlayer.addEventListener('pause', () => logEvent('pause'));
-      activeAudioPlayer.addEventListener('seeked', () => logEvent('seeked'));
-      activeAudioPlayer.addEventListener('ended', () => logEvent('ended'));
+      mediaContainer.innerHTML = `<audio id="active-media" controls src="${mediaConfig.url}"></audio>`;
     }
-    
+
+    activePlayer = document.getElementById('active-media');
+
+    // Attach full telemetry event listeners to both video and audio
+    activePlayer.addEventListener('play', () => logEvent('play'));
+    activePlayer.addEventListener('pause', () => logEvent('pause'));
+    activePlayer.addEventListener('seeked', () => logEvent('seeked'));
+    activePlayer.addEventListener('ended', () => logEvent('ended'));
+
     statusEl.style.display = 'none';
 
     // 5. Initialize Firestore session document
@@ -162,7 +136,7 @@
 
     // 6. Log interaction and visibility telemetry
     function logEvent(eventType, extraData = {}) {
-      const mediaTimestamp = activeAudioPlayer ? Math.round(activeAudioPlayer.currentTime) : null;
+      const mediaTimestamp = activePlayer ? Math.round(activePlayer.currentTime) : null;
 
       const payload = {
         event: eventType,
